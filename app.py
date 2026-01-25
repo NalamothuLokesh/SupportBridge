@@ -1,7 +1,6 @@
 """
 Customer Support Ticket Routing System - COMPREHENSIVE UI
 AI-Powered Classification, Validation & Intelligent Routing
-Checkpoint 6: Production Ready with Full Data Analysis & Summaries
 """
 
 import streamlit as st
@@ -29,8 +28,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# Professional Dark Theme Colors
 ELECTRIC_BLUE = "#3B82F6"
 DEEP_NAVY = "#0F172A"
 TEAL = "#06B6D4"
@@ -46,7 +43,7 @@ WARNING_AMBER = "#F59E0B"
 # Custom CSS for Dark Mode
 st.markdown(f"""
 <style>
-    /* Force Dark Background */
+   
     .stApp {{
         background-color: {DARK_BG};
         color: {TEXT_MAIN};
@@ -105,7 +102,7 @@ st.markdown(f"""
         color: {TEXT_MAIN};
     }}
     
-    /* Force Sidebar Dark Mode */
+   
     [data-testid="stSidebar"] {{
         background-color: {DEEP_NAVY};
     }}
