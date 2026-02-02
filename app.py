@@ -745,13 +745,20 @@ elif st.session_state.page == "Analysis":
 elif st.session_state.page == "New Ticket":
     st.markdown("## Create New Support Ticket")
     
+    # Init Session State for Result Persistence
+    if "new_ticket_result" not in st.session_state:
+        st.session_state.new_ticket_result = None
+        
+    def clear_ticket_result():
+        st.session_state.new_ticket_result = None
+    
     col1, col2 = st.columns([2, 1])
     
     with col1:
         st.markdown("### Ticket Details")
-        ticket_id = st.text_input("Ticket ID (Required - Must be unique)", placeholder="e.g., TKT-001, PAY-789", key="tid")
-        subject = st.text_input("Subject", placeholder="Brief description of your issue (must contain support keywords like 'login', 'error', 'bug', 'payment', etc.)", key="subj")
-        description = st.text_area("Description", placeholder="Detailed description", height=150, key="desc")
+        ticket_id = st.text_input("Ticket ID (Required - Must be unique)", placeholder="e.g., TKT-001, PAY-789", key="tid", on_change=clear_ticket_result)
+        subject = st.text_input("Subject", placeholder="Brief description of your issue (must contain support keywords like 'login', 'error', 'bug', 'payment', etc.)", key="subj", on_change=clear_ticket_result)
+        description = st.text_area("Description", placeholder="Detailed description", height=150, key="desc", on_change=clear_ticket_result)
     
     with col2:
         st.markdown("### Validation Status")
@@ -769,6 +776,7 @@ elif st.session_state.page == "New Ticket":
     with col1:
         submit = st.button("Submit", use_container_width=True, type="primary")
     
+    # Submission Logic
     if submit:
         # Check if Ticket ID is provided and unique
         if not ticket_id or not ticket_id.strip():
@@ -779,129 +787,142 @@ elif st.session_state.page == "New Ticket":
             if not history.empty and "ticket_id" in history.columns:
                 if ticket_id.strip() in history["ticket_id"].values:
                     st.error(f"❌ Ticket ID '{ticket_id}' already exists in your history. Please use a unique Ticket ID.")
-                else:
-                    result = validate_ticket_input(subject, description, ticket_id)
-                    
-                    if not result["is_valid"]:
-                        st.error("Please fix validation errors")
-                    elif not subject or not description:
-                        st.error("Subject and Description required")
-                    else:
-                        with st.spinner("Classifying ticket..."):
-                            classification = classify_ticket(subject, description)
-                            
-                            if classification:
-                                final_id = ticket_id.strip()
-                                sla = calculate_sla(classification["priority"])
-                                
-                                ticket_data = {
-                                    "ticket_id": final_id,
-                                    "subject": subject,
-                                    "description": description,
-                                    "category": classification["category"],
-                                    "category_confidence": classification["category_confidence"],
-                                    "priority": classification["priority"],
-                                    "priority_confidence": classification["priority_confidence"],
-                                    "sla_hours": sla
-                                }
-                                
-                                save_ticket(ticket_data, st.session_state.user_id)
-                                
-                                st.success("✅ Ticket Created Successfully!")
-                                st.success("The model predicts both category and urgency and routes the ticket automatically, eliminating manual triage.")
-                                
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    st.markdown(f"""
-                                    <div class="card">
-                                    <strong>Ticket ID:</strong> {final_id}<br>
-                                    <strong>Status:</strong> Submitted<br>
-                                    <strong>Created:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                
-                                with col2:
-                                    st.markdown(f"""
-                                    <div class="card">
-                                    <strong>Category:</strong> {classification['category']}<br>
-                                    <strong>Priority:</strong> {classification['priority']}<br>
-                                    <strong>SLA Hours:</strong> {sla}
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                    
-                                    # Explicit Confidence Display
-                                    st.caption("Model Confidence:")
-                                    c_score = classification['category_confidence'] / 100
-                                    p_score = classification['priority_confidence'] / 100
-                                    
-                                    st.progress(c_score, text=f"Category Confidence: {classification['category_confidence']}%")
-                                    st.progress(p_score, text=f"Priority Confidence: {classification['priority_confidence']}%")
-                                    
-                                    # Model Performance Metrics (Added as requested)
-                                    st.markdown("---")
-                                    st.caption(f"Model Performance (Category: {classification['category']}):")
-                                    metrics = get_model_metrics()
-                                    perf_c1, perf_c2, perf_c3 = st.columns(3)
-                                    with perf_c1:
-                                        st.metric("Training Accuracy", "94.2%")
-                                    with perf_c2:
-                                        st.metric("Testing Accuracy", f"{metrics['category_accuracy']}%")
-                                    with perf_c3:
-                                        st.metric("Overall Accuracy", f"{metrics['category_accuracy']}%")
-                                
-                                # ==========================================
-                                # Checkpoint 8: Explainability & Robustness
-                                # ==========================================
-                                st.markdown("---")
-                                st.subheader("🧠 Model Insights")
-                                
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    st.markdown("#### LIME Explanation")
-                                    try:
-                                        from utils.explainability import ModelExplainer, plot_lime_explanation
-                                            
-                                        with st.spinner("Analyzing text patterns..."):
-                                            # Create explainer instance
-                                            explainer = ModelExplainer(vectorizer, category_model, category_model.classes_)
-                                            
-                                            # Explain
-                                            text_to_explain = f"{subject} {description}"
-                                            explanation = explainer.explain_instance(text_to_explain, num_samples=500)
-                                            
-                                            # Plot
-                                            fig = plot_lime_explanation(explanation)
-                                            st.plotly_chart(fig, use_container_width=True)
-                                            
-                                            # Detailed Text Output
-                                            with st.expander("See details"):
-                                                top_label = explanation.top_labels[0]
-                                                local_exp = explanation.local_exp[top_label]
-                                                local_exp.sort(key=lambda x: abs(x[1]), reverse=True)
-                                                
-                                                st.markdown("**Top Key Drivers:**")
-                                                for fid, weight in local_exp[:5]:
-                                                    word = explanation.domain_mapper.indexed_string.word(fid)
-                                                    effect = "Increased Confidence" if weight > 0 else "Decreased Confidence"
-                                                    color = "green" if weight > 0 else "red"
-                                                    st.markdown(f"- **{word}**: :{color}[{effect}] ({weight:.2e})")
-                                        
-                                    except Exception as e:
-                                        st.error(f"Could not generate explanation: {str(e)}")
+                    st.stop()
 
-                                with col2:
-                                    with st.expander("🛡️ Robustness & Edge Cases", expanded=True):
-                                        st.markdown("**Edge Case Handling:**")
-                                        st.markdown("✅ **Gibberish Detection:** Checked for random key mashing.")
-                                        st.markdown("✅ **Profanity Filter:** Screened for offensive language.")
-                                        st.markdown("✅ **Context Validation:** Verified support-related keywords.")
-                                        st.markdown("✅ **Noise Tolerance:** Processed text despite potential typos.")
-                                        
-                                        st.markdown("---")
-                                        st.markdown("**Processed Input:**")
-                                        st.code(f"Subject: {subject}\nDescription: {description}", language="text")
+            result = validate_ticket_input(subject, description, ticket_id)
+            
+            if not result["is_valid"]:
+                st.error("Please fix validation errors")
+            elif not subject or not description:
+                st.error("Subject and Description required")
+            else:
+                with st.spinner("Classifying ticket and generating insights..."):
+                    classification = classify_ticket(subject, description)
+                    
+                    if classification:
+                        final_id = ticket_id.strip()
+                        sla = calculate_sla(classification["priority"])
+                        
+                        ticket_data = {
+                            "ticket_id": final_id,
+                            "subject": subject,
+                            "description": description,
+                            "category": classification["category"],
+                            "category_confidence": classification["category_confidence"],
+                            "priority": classification["priority"],
+                            "priority_confidence": classification["priority_confidence"],
+                            "sla_hours": sla
+                        }
+                        
+                        save_ticket(ticket_data, st.session_state.user_id)
+                        
+                        # Prepare Result for State Persistence
+                        res_state = {
+                             "ticket": ticket_data,
+                             "metrics": get_model_metrics(),
+                             "lime_fig": None,
+                             "lime_details": None
+                        }
+                        
+                        # Generate LIME
+                        try:
+                            from utils.explainability import ModelExplainer, plot_lime_explanation
+                            explainer = ModelExplainer(vectorizer, category_model, category_model.classes_)
+                            text_to_explain = f"{subject} {description}"
+                            explanation = explainer.explain_instance(text_to_explain, num_samples=500)
+                            res_state["lime_fig"] = plot_lime_explanation(explanation)
+                            
+                            # Extract key drivers
+                            top_label = explanation.top_labels[0]
+                            local_exp = explanation.local_exp[top_label]
+                            local_exp.sort(key=lambda x: abs(x[1]), reverse=True)
+                            res_state["lime_details"] = []
+                            for fid, weight in local_exp[:5]:
+                                word = explanation.domain_mapper.indexed_string.word(fid)
+                                res_state["lime_details"].append({"word": word, "weight": weight})
+                                
+                        except Exception as e:
+                            st.warning(f"Note: Explanation generation failed: {e}")
+
+                        st.session_state.new_ticket_result = res_state
+                        st.rerun()
+
+    # Display Persistent Results
+    if st.session_state.new_ticket_result:
+        res = st.session_state.new_ticket_result
+        ticket = res["ticket"]
+        metrics = res["metrics"]
+        
+        st.success("✅ Ticket Created Successfully!")
+        st.success("The model predicts both category and urgency and routes the ticket automatically, eliminating manual triage.")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="card">
+            <strong>Ticket ID:</strong> {ticket['ticket_id']}<br>
+            <strong>Status:</strong> Submitted<br>
+            <strong>Created:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="card">
+            <strong>Category:</strong> {ticket['category']}<br>
+            <strong>Priority:</strong> {ticket['priority']}<br>
+            <strong>SLA Hours:</strong> {ticket['sla_hours']}
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Explicit Confidence Display
+            st.caption("Model Confidence:")
+            st.progress(ticket['category_confidence'] / 100, text=f"Category Confidence: {ticket['category_confidence']}%")
+            st.progress(ticket['priority_confidence'] / 100, text=f"Priority Confidence: {ticket['priority_confidence']}%")
+        
+        # Model Performance Metrics
+        st.markdown("---")
+        st.caption(f"Model Performance (Category: {ticket['category']}):")
+        perf_c1, perf_c2, perf_c3 = st.columns(3)
+        with perf_c1: st.metric("Training Accuracy", "94.2%")
+        with perf_c2: st.metric("Testing Accuracy", f"{metrics['category_accuracy']}%")
+        with perf_c3: st.metric("Overall Accuracy", f"{metrics['category_accuracy']}%")
+        
+        # Checkpoint 8: Explainability & Robustness
+        st.markdown("---")
+        st.subheader("🧠 Model Insights")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### LIME Explanation")
+            if res["lime_fig"]:
+                st.plotly_chart(res["lime_fig"], use_container_width=True)
+                
+                with st.expander("See details"):
+                    st.markdown("**Top Key Drivers:**")
+                    if res["lime_details"]:
+                        for item in res["lime_details"]:
+                            word = item["word"]
+                            weight = item["weight"]
+                            effect = "Increased Confidence" if weight > 0 else "Decreased Confidence"
+                            color = "green" if weight > 0 else "red"
+                            st.markdown(f"- **{word}**: :{color}[{effect}] ({weight:.2e})")
+            else:
+                 st.info("Explanation analysis not available.")
+                 
+        with col2:
+            with st.expander("🛡️ Robustness & Edge Cases", expanded=True):
+                st.markdown("**Edge Case Handling:**")
+                st.markdown("✅ **Gibberish Detection:** Checked for random key mashing.")
+                st.markdown("✅ **Profanity Filter:** Screened for offensive language.")
+                st.markdown("✅ **Context Validation:** Verified support-related keywords.")
+                st.markdown("✅ **Noise Tolerance:** Processed text despite potential typos.")
+                
+                st.markdown("---")
+                st.markdown("**Processed Input:**")
+                st.code(f"Subject: {ticket['subject']}\nDescription: {ticket['description']}", language="text")
 
 # ============================================================================
 # PAGE: BULK UPLOAD
